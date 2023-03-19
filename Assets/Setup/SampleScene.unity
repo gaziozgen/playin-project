@@ -169,11 +169,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   grid: {fileID: 961633379}
   wordList:
-  - east
-  - seat
   - eat
-  - tea
   - set
+  - seat
+  - east
+  - tea
 --- !u!1 &411383971
 GameObject:
   m_ObjectHideFlags: 0
@@ -539,8 +539,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d02c57ba9c341a409d186815466c223, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  width: 30
-  height: 30
+  width: 50
+  height: 50
   tilePrefab: {fileID: 8284322506929384550, guid: acfbcb017d3e14846b0948754328854d, type: 3}
 --- !u!1 &1179118232
 GameObject:

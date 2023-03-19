@@ -11,7 +11,7 @@ public class Tile : MonoBehaviour
 
     public char GetChar()
     {
-        return content.text[0];
+        return c;
     }
 
     public bool IsEmpty()
@@ -21,14 +21,14 @@ public class Tile : MonoBehaviour
 
     public void SetChar(char text)
     {
-        gameObject.name = text.ToString();
         c = text;
-        content.text = text.ToString();
+        content.text = c.ToString();
         gameObject.SetActive(true);
     }
 
     public void ClearTile()
     {
+        c = default;
         content.text = default;
         gameObject.SetActive(false);
     }

@@ -18,8 +18,8 @@ public class WordPlacer : MonoBehaviour
         public string word;
         public Vector2 StartPosition;
         public Vector2 Direction;
-        public int RootIntersectionIndex = -1;
-        public int IntersectionIndex = -1;
+        public int RootsIntersectionIndex = -1;
+        public int IntersectionIndexWithRoot = -1;
         public List<(int, int)> PossibleLinks = new List<(int, int)>();
         public List<Word> FailedWords = new List<Word>();
 
@@ -30,81 +30,107 @@ public class WordPlacer : MonoBehaviour
             Direction = Vector2.zero;
         }
     }
-
     public void Start()
     {
         Refresh();
     }
 
-
-
     public void Refresh()
     {
-        ClearData();
-        PlaceFistWord();
-
-        while (remainingWords.Count > 0)
+        // setup
+        grid.ClearGrid();
+        remainingWords.Clear();
+        placedWords.Clear();
+        List<Word> possibleStartWords = new List<Word>();
+        for (int i = 0; i < wordList.Count; i++)
         {
-            if (possibleWords.Count == 0)
-            {
-                if (placedWords.Count == 1) break;
-                Word word = RemoveLastAddedWord();
-                if (!TryDifferentConnectionWithRemovedWord(word))
-                    placedWords.Peek().FailedWords.Add(word);
-            }
-            else
-            {
-                Word newWord = possibleWords[Random.Range(0, possibleWords.Count)];
-                Word oldWord = placedWords.Peek();
-                AssignConnectionsBetweenTwoWord(oldWord, newWord);
-
-                if (!ConnectFromRandomLink(newWord))
-                    placedWords.Peek().FailedWords.Add(newWord);
-            }
+            Word word = new(wordList[i].ToUpper());
+            remainingWords.Add(word);
+            possibleStartWords.Add(word);
         }
-        if (placedWords.Count != wordList.Count) print("Unplaceable words!");
-        else print("Success");
+
+        // until there is not tried word to start placement
+        while (0 < possibleStartWords.Count)
+        {
+            // place a random possible first word
+            int selectedWordIndex = Random.Range(0, possibleStartWords.Count);
+            Word firstWord = possibleStartWords[selectedWordIndex];
+            possibleStartWords.RemoveAt(selectedWordIndex);
+            PlaceWord(firstWord, grid.GetCenter(), RandomDirection());
+
+            // while there is an unplaced word
+            while (0 < remainingWords.Count) 
+            {
+                // if there are possible words suitable for placement
+                if (possibleWords.Count > 0)
+                {
+                    Word oldWord = placedWords.Peek();
+                    Word newWord = possibleWords[Random.Range(0, possibleWords.Count)];
+
+                    // assign possible connections
+                    AssignLinksBetweenTwoWord(oldWord, newWord);
+
+                    // try connect from random possible connection
+                    if (!TryConnectFromRandomLink(newWord))
+                        placedWords.Peek().FailedWords.Add(newWord);
+                }
+                else
+                {
+                    // if there is no option left with this start word => break
+                    if (placedWords.Count == 1)
+                    {
+                        RemoveFirstWordToClearGrid();
+                        break;
+                    }
+
+                    // remove last added word
+                    Word word = RemoveLastAddedWord();
+
+                    // try the remaining possible connections for removed word
+                    if (!TryConnectRemovedWordWithDifferentConnection(word))
+                        placedWords.Peek().FailedWords.Add(word);
+                }
+            }
+            if (remainingWords.Count == 0) break;
+        }
+
+        if (remainingWords.Count == 0) print("Success");
+        else print("Unplaceable words!");
     }
 
 
-    private bool TryDifferentConnectionWithRemovedWord(Word word)
+    #region Helper Functions
+    private bool TryConnectRemovedWordWithDifferentConnection(Word word)
     {
-        bool success = false;
         while (word.PossibleLinks.Count > 0)
         {
             int index = Random.Range(0, word.PossibleLinks.Count);
             (int, int) link = word.PossibleLinks[index];
             word.PossibleLinks.RemoveAt(index);
 
-            if (PlaceWordToOtherWord(placedWords.Peek(), word, link.Item1, link.Item2))
-                success = true; break;
+            if (TryPlaceWordToOtherWord(placedWords.Peek(), word, link.Item1, link.Item2))
+                return true;
         }
-        return success;
-
+        return false;
     }
 
-    private bool ConnectFromRandomLink(Word word)
+    private bool TryConnectFromRandomLink(Word word)
     {
-        bool success = false;
         while (word.PossibleLinks.Count > 0)
         {
             int index = Random.Range(0, word.PossibleLinks.Count);
             (int, int) link = word.PossibleLinks[index];
             word.PossibleLinks.RemoveAt(index);
 
-            if (PlaceWordToOtherWord(placedWords.Peek(), word, link.Item1, link.Item2))
-            {
-                success = true;
-                break;
-            }
+            if (TryPlaceWordToOtherWord(placedWords.Peek(), word, link.Item1, link.Item2))
+                return true;
         }
-        return success;
+        return false;
     }
 
-    private void AssignConnectionsBetweenTwoWord(Word oldWord, Word newWord)
+    private void AssignLinksBetweenTwoWord(Word oldWord, Word newWord)
     {
         newWord.PossibleLinks.Clear();
-
         for (int i = 0; i < oldWord.word.Length; i++)
         {
             for (int j = 0; j < newWord.word.Length; j++)
@@ -115,56 +141,29 @@ public class WordPlacer : MonoBehaviour
         }
     }
 
-    private Word RemoveLastAddedWord()
+    private bool CheckSpaceOnGrid(Vector2 startPos, int length, Vector2 dir, int intersectionIndex)
     {
-        Word word = placedWords.Pop();
-        for (int i = 0; i < word.word.Length; i++)
-        {
-            if (word.IntersectionIndex != i)
-                grid.GetTile(word.StartPosition + i * word.Direction).ClearTile();
-        }
-        remainingWords.Add(word);
-        word.FailedWords.Clear();
-        return word;
-    }
-
-    private bool PlaceWordToOtherWord(Word oldWord, Word newWord, int indexInOldWord, int indexInNewWord)
-    {
-        Tile tile = grid.GetTile(oldWord.StartPosition + oldWord.Direction * indexInOldWord);
-        Vector2 newWordDirection = GetDirectionOfNewPlacement(tile);
-        if (CheckSpace(tile.Position, newWord.word.Length, newWordDirection, indexInNewWord))
-        {
-            Vector2 startPosition = tile.Position - indexInNewWord * newWordDirection;
-            newWord.RootIntersectionIndex = indexInOldWord;
-            newWord.IntersectionIndex = indexInNewWord;
-            PlaceWord(newWord, startPosition, newWordDirection);
-            return true;
-        }
-        return false;
-    }
-
-    private bool CheckSpace(Vector2 tilePos, int length, Vector2 dir, int charIndex)
-    {
+        Vector2 otherDir = new Vector2(1, -1) - dir;
         for (int wordIndex = 0; wordIndex < length; wordIndex++)
         {
-            if (wordIndex == charIndex) continue;
+            if (wordIndex == intersectionIndex) continue;
 
-            Vector2 targetPos = tilePos + dir * (wordIndex - charIndex);
-            if (!grid.GetTile(targetPos).IsEmpty()) return false;
-
-            Vector2 otherDir = new Vector2(1, -1) - dir;
-            if (!(grid.GetTile(targetPos + otherDir).IsEmpty() && grid.GetTile(targetPos - otherDir).IsEmpty())) return false;
+            for (int neighbourDistance = -1; neighbourDistance < 2; neighbourDistance++)
+            {
+                Vector2 targetPos = startPos + dir * wordIndex + neighbourDistance * otherDir;
+                if (!grid.GetTile(targetPos).IsEmpty())
+                    return false;
+            }
         }
-        if (!(grid.GetTile(tilePos + dir * (-charIndex - 1)).IsEmpty() && grid.GetTile(tilePos + dir * (length - charIndex)).IsEmpty())) return false;
+        if (!grid.GetTile(startPos - dir).IsEmpty() || !grid.GetTile(startPos + dir * length).IsEmpty()) return false;
 
         return true;
     }
 
-    private Vector2 GetDirectionOfNewPlacement(Tile tile)
-    {
-        if (grid.GetTile(tile.Position + Vector2.right).IsEmpty() && grid.GetTile(tile.Position - Vector2.right).IsEmpty()) return Vector2.right;
-        else return Vector2.down;
-    }
+    #endregion
+
+
+    #region Place & Remove Functions
 
     private void PlaceWord(Word word, Vector2 pos, Vector2 dir)
     {
@@ -179,24 +178,64 @@ public class WordPlacer : MonoBehaviour
         placedWords.Push(word);
     }
 
-    private void PlaceFistWord()
+    private bool TryPlaceWordToOtherWord(Word oldWord, Word newWord, int indexInOldWord, int indexInNewWord)
     {
-        Vector2[] directionList = { Vector2.down, Vector2.right };
-        int selectedWordIndex = Random.Range(0, remainingWords.Count);
-        Word firstWord = remainingWords[selectedWordIndex];
-        PlaceWord(firstWord, grid.GetCenter(), directionList[Random.Range(0, 2)]);
+        Vector2 intersectionPosition = oldWord.StartPosition + oldWord.Direction * indexInOldWord;
+        Vector2 newWordDirection = GetDirectionOfNewPlacement(intersectionPosition);
+        Vector2 newWordStartPosition = intersectionPosition - newWordDirection * indexInNewWord;
+        if (CheckSpaceOnGrid(newWordStartPosition, newWord.word.Length, newWordDirection, indexInNewWord))
+        {
+            Vector2 startPosition = intersectionPosition - indexInNewWord * newWordDirection;
+            newWord.RootsIntersectionIndex = indexInOldWord;
+            newWord.IntersectionIndexWithRoot = indexInNewWord;
+            PlaceWord(newWord, startPosition, newWordDirection);
+            return true;
+        }
+        return false;
     }
 
-    private void ClearData()
+    private Word RemoveLastAddedWord()
     {
-        remainingWords.Clear();
-        placedWords.Clear();
-        for (int i = 0; i < wordList.Count; i++)
+        Word word = placedWords.Pop();
+        for (int i = 0; i < word.word.Length; i++)
         {
-            Word word = new(wordList[i].ToUpper());
-            remainingWords.Add(word);
+            if (word.IntersectionIndexWithRoot != i)
+                grid.GetTile(word.StartPosition + i * word.Direction).ClearTile();
         }
-        grid.ClearGrid();
+        remainingWords.Add(word);
+        word.FailedWords.Clear();
+        return word;
     }
+
+    private void RemoveFirstWordToClearGrid()
+    {
+        Word firstWord = placedWords.Pop();
+        firstWord.FailedWords.Clear();
+        remainingWords.Add(firstWord);
+        for (int i = 0; i < firstWord.word.Length; i++)
+        {
+            grid.GetTile(firstWord.StartPosition + i * firstWord.Direction).ClearTile();
+        }
+    }
+
+    #endregion
+
+
+    #region Direction Functions
+
+    private Vector2 RandomDirection()
+    {
+        Vector2[] directionList = { Vector2.down, Vector2.right };
+        return directionList[Random.Range(0, 2)];
+    }
+
+    private Vector2 GetDirectionOfNewPlacement(Vector2 tilePos)
+    {
+        if (grid.GetTile(tilePos + Vector2.right).IsEmpty() && grid.GetTile(tilePos - Vector2.right).IsEmpty()) return Vector2.right;
+        else return Vector2.down;
+    }
+
+    #endregion
+
 
 }
